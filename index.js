@@ -4,16 +4,20 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use(cors());
 app.use(express.json());
 
-// Supabase admin client (privileged)
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// POST /update-password
+app.get('/', (req, res) => {
+  res.send('Haji Fitness Password Reset API');
+});
+
 app.post('/update-password', async (req, res) => {
   const { email, newPassword } = req.body;
 
@@ -22,40 +26,34 @@ app.post('/update-password', async (req, res) => {
   }
 
   try {
-    // 1. Find user by email
-    const { data: user, error: findError } = await supabase.auth.admin.listUsers({
-      email,
-    });
+    // 1. Get user ID from email using RPC
+    const { data: userId, error: rpcError } = await supabase.rpc(
+      'get_user_id_by_email',
+      { _email: email }
+    );
 
-    if (findError) {
-      console.error('Error finding user:', findError.message);
-      return res.status(500).json({ error: 'Failed to find user.' });
-    }
-
-    if (!user || user.users.length === 0) {
+    if (rpcError || !userId) {
+      console.error('RPC error:', rpcError?.message);
       return res.status(404).json({ error: 'User not found.' });
     }
 
-    const userId = user.users[0].id;
-
-    // 2. Update user password
+    // 2. Update the password
     const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
       password: newPassword,
     });
 
     if (updateError) {
-      console.error('Error updating password:', updateError.message);
-      return res.status(500).json({ error: 'Failed to update password.' });
+      console.error('Password update failed:', updateError.message);
+      return res.status(500).json({ error: updateError.message });
     }
 
     return res.status(200).json({ message: 'Password updated successfully.' });
   } catch (err) {
-    console.error('Unhandled error:', err.message);
-    return res.status(500).json({ error: 'Internal server error.' });
+    console.error('Unexpected server error:', err.message);
+    return res.status(500).json({ error: 'Server error. Please try again.' });
   }
 });
 
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Password reset API running on port ${PORT}`);
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
